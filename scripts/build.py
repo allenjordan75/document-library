@@ -127,7 +127,8 @@ def shell(title: str, description: str, body: str, config: dict, *, path_prefix:
   <link rel="stylesheet" href="{path_prefix}assets/style.css">
 </head>
 <body style="--accent:{accent}">
-  <header class="site-header"><a class="brand" href="{path_prefix}">{site_title}</a></header>
+  <a class="skip-link" href="#main-content">Skip to content</a>
+  <header class="site-header"><div class="header-inner"><a class="brand" href="{path_prefix}"><span class="brand-mark">J/</span><span><strong>{site_title}</strong><small>Field notes &amp; useful things</small></span></a><span class="header-note">Personal reference library</span></div></header>
   {body}
   <footer><span>Curated by {html.escape(config['author'])}</span><span>Hosted on GitHub Pages</span></footer>
 </body>
@@ -147,6 +148,11 @@ def build(check: bool = False) -> int:
             if metadata.get("draft", False):
                 continue
             body = raw_body if source.suffix.lower() == ".html" else markdown_to_html(raw_body)
+            if metadata.get("standalone", False):
+                if source.suffix.lower() != ".html":
+                    raise ValueError(f"{source}: standalone documents must use .html")
+                if "<!doctype html" not in raw_body[:100].lower() or "<html" not in raw_body[:200].lower():
+                    raise ValueError(f"{source}: standalone document must contain a complete HTML document")
             documents.append({**metadata, "body": body, "source": source})
         except (ValueError, OSError) as exc:
             errors.append(str(exc))
@@ -176,15 +182,19 @@ def build(check: bool = False) -> int:
         cards.append(f'''<article class="card" data-search="{html.escape(str(doc['title']) + ' ' + str(doc['description']), quote=True).lower()}">
   <a href="documents/{slug}/"><time>{html.escape(str(doc['date']))}</time><h2>{html.escape(str(doc['title']))}</h2><p>{html.escape(str(doc['description']))}</p><span class="read">Read document →</span></a>
 </article>''')
-        article = f'''<main class="article-shell">
+        article = f'''<main id="main-content" class="article-shell">
   <a class="back" href="../../">← All documents</a>
   <article class="document"><header><time>{html.escape(str(doc['date']))}</time><h1>{html.escape(str(doc['title']))}</h1><p class="dek">{html.escape(str(doc['description']))}</p></header>{doc['body']}</article>
 </main>'''
         target = PUBLIC / "documents" / str(doc["slug"])
         target.mkdir(parents=True)
-        (target / "index.html").write_text(shell(str(doc["title"]), str(doc["description"]), article, config, path_prefix="../../"))
+        if doc.get("standalone", False):
+            page = str(doc["body"])
+        else:
+            page = shell(str(doc["title"]), str(doc["description"]), article, config, path_prefix="../../")
+        (target / "index.html").write_text(page)
 
-    landing = f'''<main>
+    landing = f'''<main id="main-content">
   <section class="hero"><p class="eyebrow">A growing personal archive</p><h1>{html.escape(config['title'])}</h1><p>{html.escape(config['description'])}</p></section>
   <section class="library"><div class="library-head"><h2>Latest additions</h2><label><span class="sr-only">Search documents</span><input id="search" type="search" placeholder="Search the library…"></label></div><div id="documents" class="grid">{''.join(cards)}</div><p id="empty" hidden>No matching documents.</p></section>
 </main>
@@ -207,4 +217,3 @@ if __name__ == "__main__":
     parser.add_argument("--check", action="store_true", help="validate content without writing output")
     args = parser.parse_args()
     raise SystemExit(build(args.check))
-
